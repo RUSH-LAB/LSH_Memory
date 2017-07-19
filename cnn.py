@@ -43,13 +43,14 @@ class Net(nn.Module):
         x = self.softmax(x)
         return x
 
+torch.cuda.set_device(1)
 net = Net(input_shape=(1,28,28))
-#net.cuda()
+net.cuda()
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(net.parameters(), lr=1e-3)
 
-for epoch in range(1):
+for epoch in range(10):
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
         inputs, labels = data
@@ -66,7 +67,6 @@ for epoch in range(1):
             running_loss = 0.0
 
 print('Finished Training')
-
 
 correct = 0
 total = 0
