@@ -12,16 +12,6 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import omniglot
 
-DATA_FILE_FORMAT = os.path.join(os.getcwd(), '%s_omni.pkl')
-train_filepath = DATA_FILE_FORMAT % 'train'
-
-N = 1000
-batch_size = 32
-
-trainset = omniglot.SiameseDataset(train_filepath)
-sampler = omniglot.SiameseSampler(trainset, N, batch_size)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, sampler=sampler, num_workers=4)
-
 class Net(nn.Module):
     def __init__(self, input_shape):
         super(Net, self).__init__()
@@ -62,6 +52,22 @@ class Net(nn.Module):
         result = self.predict(l1_distance)
         return result
 
+rnd = 1000
+batch_size = 32
+N = 20
+K = 250
+DATA_FILE_FORMAT = os.path.join(os.getcwd(), '%s_omni.pkl')
+
+train_filepath = DATA_FILE_FORMAT % 'train'
+trainset = omniglot.TrainSiameseDataset(train_filepath)
+sampler = omniglot.SiameseSampler(trainset, rnd, batch_size, False)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, sampler=sampler, num_workers=4)
+
+test_filepath = DATA_FILE_FORMAT % 'test'
+test_set = omniglot.TestSiameseDataset(test_filepath)
+sampler = omniglot.SiameseSampler(testset, K, N, True)
+testloader = torch.utils.data.DataLoader(testset, batch_size=N, shuffle=True, sampler=sampler, num_workers=4)
+
 #torch.cuda.set_device(1)
 net = Net(input_shape=(1,28,28))
 net.cuda()
@@ -87,3 +93,18 @@ for epoch in range(10):
             running_loss = 0.0
 
 print('Finished Training')
+
+correct = 0
+print("Evaluating model on {0} unique {1}-way one-shot learning tasks ...".format(K,N))
+for i, data in enumerate(testloader, 0)
+    images, labels = data
+    left, right = inputs
+    left, right = Variable(left.cuda()), Variable(right.cuda())
+    labels = labels.cuda()
+    y_hat = net(left, right)
+    _, predicted = torch.max(y_hat.data, 1)
+    if torch.eq(predicted, labels).sum() == N
+        correct += 1
+    total += 1
+
+print('Accuracy {0} for {1}-way one-shot learning: {0} %'.format(100 * correct / total, N))
