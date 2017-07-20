@@ -69,7 +69,7 @@ class SiameseDataset(Dataset):
             img /= 255.0
             self.data[label].append(img)
         self.num_categories = len(self.data)
-        self.category_size = len(self.data[0])
+        self.category_size = len(self.data[processed_data['labels'][0]])
 
     def __len__(self):
         return self.num_categories
@@ -79,7 +79,7 @@ class SiameseDataset(Dataset):
 
 class TrainSiameseDataset(SiameseDataset):
     def __init__(self, filepath):
-        super(SiameseDataset, self).__init__(filepath)
+        super(TrainSiameseDataset, self).__init__(filepath)
 
     def __getitem__(self, idx):
         index, same = idx
@@ -101,13 +101,13 @@ class TrainSiameseDataset(SiameseDataset):
 
 class TestSiameseDataset(SiameseDataset):
     def __init__(self, filepath):
-        super(SiameseDataset, self).__init__(filepath)
+        super(TestSiameseDataset, self).__init__(filepath)
         
-    def test_get_item(self, idx):
-    	""" Args: [test_image, same] = idx 
-    	    test_image = (test_category, test_category_image)
-    	    same (bool) = if support image comes from the same category
-    	"""
+    def __getitem__(self, idx):
+        """ Args: [test_image, same] = idx 
+            test_image = (test_category, test_category_image)
+            same (bool) = if support image comes from the same category
+        """
         test_id, same = idx
         category, index = test_id
         test_img = self.data[category][index]
@@ -142,18 +142,18 @@ class SiameseSampler(sampler.Sampler):
         self.split = 1 if sampler_type else int(batch_size/2)
 
     def __len__(self):
-        return self.batch_size * self.N
+        return self.batch_size * self.rnd
 
     def __iter__(self):
-        batch_index = 0
-        category = random.randint(0, self.data_source.num_categories-1)
-        index = random.randint(0, self.data_source.category_size-1)
+        if self.sampler_type:
+            pos = self.generate_test()
 
+        batch_index = 0
         for idx in range(self.batch_size * self.rnd):
-        	if not sampler_type:
+            if not self.sampler_type:
                 pos = random.randint(0, len(self.data_source)-1)
 
-            if batch_index < split:
+            if batch_index < self.split:
                 yield (pos, True)
             else:
                 yield (pos, False)
@@ -161,6 +161,10 @@ class SiameseSampler(sampler.Sampler):
             batch_index += 1
             if batch_index == self.batch_size:
                 batch_index = 0
-                if sampler_type:
-                    category = random.randint(0, self.data_source.num_categories-1)
-                    index = random.randint(0, self.data_source.category_size-1)
+                if self.sampler_type:
+                    pos = self.generate_test()
+
+    def generate_test(self):
+        category = random.randint(0, self.data_source.num_categories-1)
+        index = random.randint(0, self.data_source.category_size-1)
+        return (category, index)

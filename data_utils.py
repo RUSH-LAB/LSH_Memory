@@ -154,6 +154,6 @@ def preprocess_omniglot():
 
   directory = TEST_DIR
   write_file = DATA_FILE_FORMAT % 'test'
-  write_datafiles(directory, write_file, resize=True, rotate=False, new_width=IMAGE_NEW_SIZE, new_height=IMAGE_NEW_SIZE, first_label=num_labels)        
+  write_datafiles(directory, write_file, resize=True, rotate=False, new_width=IMAGE_NEW_SIZE, new_height=IMAGE_NEW_SIZE)
 
 preprocess_omniglot()
