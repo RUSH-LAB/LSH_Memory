@@ -9,14 +9,6 @@ import torch.nn.functional as F
 
 import omniglot
 
-trainset = omniglot.OmniglotDataset('train')
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True, num_workers=4)
-
-testset = omniglot.OmniglotDataset('test')
-testloader = torch.utils.data.DataLoader(testset, batch_size=32, shuffle=False, num_workers=4)
-
-classes = 4515
-
 class Net(nn.Module):
     def __init__(self, input_shape):
         super(Net, self).__init__()
@@ -39,44 +31,58 @@ class Net(nn.Module):
         x = F.relu(self.conv4(x))
         x = self.pool(x)
         x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = self.softmax(x)
+        x = self.fc1(x)
         return x
 
-torch.cuda.set_device(1)
+episode_length = 30
+episode_width = 5
+trainset = omniglot.OmniglotDataset('train')
+trainloader = trainset.sample_episode_batch(episode_length, episode_width, batch_size=16, N=100000)
+
+testset = omniglot.OmniglotDataset('test')
+testloader = testset.sample_episode_batch(episode_length, episode_width, batch_size=1, N=50)
+
+for i, data in enumerate(trainloader, 0):
+    # training
+    inputs, labels = data
+    print(len(inputs), len(labels))
+    for x, y in zip(inputs, labels): 
+        print(x.size(), y.size())
+
+'''
+#torch.cuda.set_device(1)
 net = Net(input_shape=(1,28,28))
 net.cuda()
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(net.parameters(), lr=1e-3)
-
-for epoch in range(10):
-    running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
-        inputs, labels = data
-        inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+for i, data in enumerate(trainloader, 0):
+    # training
+    inputs, labels = data
+    for x, y in zip(inputs, labels):
+        x, y = Variable(x.cuda()), Variable(labels.cuda())
         optimizer.zero_grad()
-        y_hat = net(inputs)
-        loss = criterion(y_hat, labels)
+        y_hat = net(x)
+        loss = criterion(y_hat, y)
         loss.backward()
         optimizer.step()
 
-        running_loss += loss.data[0]
-        if i == len(trainloader)-1:
-            print("[{0:d}, {1:5d}] loss: {2:.3f}".format((epoch+1), (i+1), (running_loss / len(trainloader))))
-            running_loss = 0.0
+    correct = []
+    correct_by_k_shot = dict((k, list()) for k in range(episode_width + 1))
+    for i, data in enumerate(testloader, 0):
+        x, y = data
+        x, y = Variable(x.cuda())
+        y_hat = net(x)
+        correct.append(torch.mean(torch.eq(y, y_hat)))
 
-print('Finished Training')
+        # compute per_shot accuracies
+        seen_count = [[0] * episode_width]
+        # loop over episode steps
+        for yy, yy_hat in zip(y, y_hat):
+            count = seen_count[yy % episode_width]
+            if count < (episode_width + 1):
+                correct_by_k_shot[count].append(torch.eq(yy, yy_hat))
+            seen_count[yy % episode_width] += 1
 
-correct = 0
-total = 0
-for i, data in enumerate(testloader, 0):
-    images, labels = data
-    images = Variable(images.cuda())
-    labels = labels.cuda()
-    y_hat = net(images)
-    _, predicted = torch.max(y_hat.data, 1)
-    total += labels.size(0)
-    correct += torch.eq(predicted, labels).sum()
-
-print('Accuracy of the network on the 10000 test images: {0} %'.format(100 * correct / total))
+    print("validation overall accuracy {0:f}".format(np.mean(correct)))
+    for idx in range(episode_width + 1):
+        print("{0:d}-shot: {1:.3f}".format(idx, np.mean(correct_by_k_shot[idx])))
+'''

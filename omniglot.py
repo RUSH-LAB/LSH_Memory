@@ -8,37 +8,6 @@ from torch.utils.data import Dataset, DataLoader
 import torch.utils.data.sampler as sampler
 from torchvision import transforms, utils
 
-DATA_FILE_FORMAT = os.path.join(os.getcwd(), '%s_omni.pkl')
-
-class OmniglotDataset(Dataset):
-    """Omniglot dataset."""
-
-    def __init__(self, data_file):
-        """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        with open(DATA_FILE_FORMAT % data_file, "rb") as f:
-            processed_data = pickle.load(f)
-        self.images = np.vstack([np.expand_dims(np.expand_dims(image, axis=0), axis=0) for image in processed_data['images']])
-        self.images = self.images.astype('float32')
-        self.images /= 255.0
-
-        self.labels = processed_data['labels']
-        self.labels = self.labels.astype('int64')
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __getitem__(self, idx):
-        image = self.images[idx, :, :, :]
-        label = self.labels[idx]
-        sample = [torch.from_numpy(image), label]
-        return sample
-
 def random_index(seed, N):
     """ Args: seed - initial index, N - maximum index
         Return: A random index between [0, N] except for seed
@@ -47,6 +16,78 @@ def random_index(seed, N):
     idx = (seed + offset) % N 
     assert(seed != idx)
     return idx
+
+class OmniglotDataset(Dataset):
+    """Omniglot dataset."""
+
+    def __init__(self, filepath):
+        """
+        Args:
+            filepath (string): path to data file
+            Data format - list of characters, list of images, (row, col, ch) numpy array normalized between (0.0, 1.0)
+            Omniglot dataset - Each language contains a set of characters; Each character is defined by 20 different images
+        """
+        with open(filepath, "rb") as f:
+            processed_data = pickle.load(f)
+
+        self.data = dict()
+        for image, label in zip(processed_data['images'], processed_data['labels']):
+            if label not in self.data:
+                self.data[label] = list()
+            img = np.expand_dims(image, axis=0).astype('float32')
+            img /= 255.0
+            self.data[label].append(img)
+        self.num_categories = len(self.data)
+        self.category_size = len(self.data[0])
+
+    def sample_episode_batch(self, N, episode_length, episode_width, batch_size):
+        """Generates a random batch for training or validation.
+
+        Structures each element of the batch as an 'episode'.
+        Each episode contains episode_length examples and
+        episode_width distinct labels.
+
+        Args:
+          data: A dictionary mapping label to list of examples.
+          episode_length: Number of examples in each episode.
+          episode_width: Distinct number of labels in each episode.
+          batch_size: Batch size (number of episodes).
+
+        Returns:
+          A tuple (x, y) where x is a list of batches of examples
+          with size episode_length and y is a list of batches of labels.
+          xx = (batch_size, example), yy = (batch_size,)
+        """
+        for rnd in range(N):
+            episodes_x = [list() for _ in range(episode_length)]
+            episodes_y = [list() for _ in range(episode_length)]
+            assert self.num_categories >= episode_width
+
+            for b in range(batch_size):
+                episode_labels = random.sample(self.data.keys(), episode_width)
+
+                # Evenly divide episode_length among episode_width
+                remainder = episode_length % episode_width
+                remainders = [0] * (episode_width - remainder) + [1] * remainder
+                quotient = int((episode_length - remainder) / episode_width)
+                episode_x = [random.sample(data[label], r + quotient) for label, r in zip(episode_labels, remainders)]
+                assert(quotient+1 <= self.category_size)
+
+                # Arrange episode so that each distinct label is seen before moving to 2nd showing
+                # Concatenate class episodes together into single list
+                episode = sum([[(example, label_id, example_id) for example_id, example in enumerate(examples_per_label)] for label_id, examples_per_label in enumerate(episode_x)], list())
+                random.shuffle(episode)
+                episode.sort(key=lambda elem: elem[2])
+                assert len(episode) == episode_length
+
+                # During training, the set of labels for each episode are considered distinct
+                # The memory is not emptied during each training episode
+                for idx in range(episode_length):
+                    episodes_x[idx].append(episode[idx][0])
+                    episodes_y[idx].append(episode[idx][1] + b * episode_width)
+
+            yield ([torch.from_numpy(np.array(xx)) for xx in episodes_x],
+                   [torch.from_numpy(np.array(yy)) for yy in episodes_y])
 
 class SiameseDataset(Dataset):
     """Siamese Dataset dataset."""
