@@ -38,9 +38,9 @@ class OmniglotDataset(Dataset):
             img /= 255.0
             self.data[label].append(img)
         self.num_categories = len(self.data)
-        self.category_size = len(self.data[0])
+        self.category_size = len(self.data[processed_data['labels'][0]])
 
-    def sample_episode_batch(self, N, episode_length, episode_width, batch_size):
+    def sample_episode_batch(self, episode_length, episode_width, batch_size, N):
         """Generates a random batch for training or validation.
 
         Structures each element of the batch as an 'episode'.
@@ -70,7 +70,7 @@ class OmniglotDataset(Dataset):
                 remainder = episode_length % episode_width
                 remainders = [0] * (episode_width - remainder) + [1] * remainder
                 quotient = int((episode_length - remainder) / episode_width)
-                episode_x = [random.sample(data[label], r + quotient) for label, r in zip(episode_labels, remainders)]
+                episode_x = [random.sample(self.data[label], r + quotient) for label, r in zip(episode_labels, remainders)]
                 assert(quotient+1 <= self.category_size)
 
                 # Arrange episode so that each distinct label is seen before moving to 2nd showing

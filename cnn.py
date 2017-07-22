@@ -1,3 +1,4 @@
+import os
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -36,18 +37,15 @@ class Net(nn.Module):
 
 episode_length = 30
 episode_width = 5
-trainset = omniglot.OmniglotDataset('train')
+DATA_FILE_FORMAT = os.path.join(os.getcwd(), '%s_omni.pkl')
+
+train_filepath = DATA_FILE_FORMAT % 'train'
+trainset = omniglot.OmniglotDataset(train_filepath)
 trainloader = trainset.sample_episode_batch(episode_length, episode_width, batch_size=16, N=100000)
 
-testset = omniglot.OmniglotDataset('test')
+test_filepath = DATA_FILE_FORMAT % 'test'
+testset = omniglot.OmniglotDataset(test_filepath)
 testloader = testset.sample_episode_batch(episode_length, episode_width, batch_size=1, N=50)
-
-for i, data in enumerate(trainloader, 0):
-    # training
-    inputs, labels = data
-    print(len(inputs), len(labels))
-    for x, y in zip(inputs, labels): 
-        print(x.size(), y.size())
 
 '''
 #torch.cuda.set_device(1)
