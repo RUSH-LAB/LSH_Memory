@@ -32,7 +32,7 @@ def MemoryLoss(positive, negative, margin):
         margin
     """
     assert(positive.size() == negative.size())
-    dist_hinge = torch.clamp(negative - positive + margin, min=0.0)
+    dist_hinge = F.relu(negative - positive + margin) - margin
     loss = torch.mean(dist_hinge)
     return loss
 
@@ -46,7 +46,7 @@ Softmax Temperature -
 class Memory(nn.Module):
     def __init__(self, memory_size, key_dim, top_k = 256, inverse_temp = 40, age_noise=8.0, margin = 0.1):
         super(Memory, self).__init__()
-        self.keys = F.normalize(torch.randn(memory_size, key_dim), dim=1)
+        self.keys = F.normalize(random_uniform((memory_size, key_dim), -0.1, 0.1), dim=1)
         self.values = torch.zeros(memory_size, 1).long()
         self.age = torch.zeros(memory_size, 1)
 
@@ -56,6 +56,11 @@ class Memory(nn.Module):
         self.softmax_temperature = max(1.0, math.log(0.2 * top_k) / inverse_temp)
         self.age_noise = age_noise
         self.margin = margin
+
+    def erase(self):
+        self.keys = F.normalize(random_uniform((self.memory_size, self.key_dim), -0.1, 0.1), dim=1)
+        self.values = torch.zeros(self.memory_size, 1).long()
+        self.age = torch.zeros(self.memory_size, 1)
 
     def predict(self, x):
         query = F.normalize(x, dim=1)

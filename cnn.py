@@ -43,6 +43,7 @@ memory_size = 8192
 key_dim = 128
 episode_length = 30
 episode_width = 5
+validation_frequency = 20
 DATA_FILE_FORMAT = os.path.join(os.getcwd(), '%s_omni.pkl')
 
 train_filepath = DATA_FILE_FORMAT % 'train'
@@ -55,45 +56,58 @@ testset = omniglot.OmniglotDataset(test_filepath)
 #torch.cuda.set_device(1)
 net = Net(input_shape=(1,28,28))
 mem = memory.Memory(memory_size, key_dim)
+net.add_module("memory", mem)
 net.cuda()
 
 optimizer = optim.Adam(net.parameters(), lr=1e-4, eps=1e-4)
 
+cummulative_loss = 0
+counter = 0
 for i, data in enumerate(trainloader, 0):
-    # training
+    # erase memory before training episode
+    mem.erase()
     x, y = data
     for xx, yy in zip(x, y):
         xx_cuda, yy_cuda = Variable(xx.cuda()), Variable(yy.cuda())
+        embed = net(xx_cuda)
+        yy_hat, softmax_embed, loss = mem.query(embed, yy_cuda, False)
         optimizer.zero_grad()
-        query = net(xx_cuda)
-        yy_hat, embed, loss = mem.query(query, yy_cuda, False)
         loss.backward()
         optimizer.step()
+        cummulative_loss += loss.data[0]
+        counter += 1
 
-    correct = []
-    correct_by_k_shot = dict((k, list()) for k in range(episode_width + 1))
-    testloader = testset.sample_episode_batch(episode_length, episode_width, batch_size=1, N=50)
-    for i, data in enumerate(testloader, 0):
+    if i % validation_frequency == 0:
         # validation
-        x, y = data
-        y_hat = []
-        for xx, yy in zip(x, y):
-            xx_cuda, yy_cuda = Variable(xx.cuda()), Variable(yy.cuda())
-            query = net(xx_cuda)
-            yy_hat, embed, loss = mem.query(query, yy_cuda, False)
-            correct.append(float(torch.equal(yy, yy_hat)))
-            y_hat.append(yy_hat)
+        correct = []
+        correct_by_k_shot = dict((k, list()) for k in range(episode_width + 1))
+        testloader = testset.sample_episode_batch(episode_length, episode_width, batch_size=1, N=50)
+        for data in testloader:
+            # erase memory before validation episode
+            mem.erase()
 
-        # compute per_shot accuracies
-        seen_count = [0 for idx in range(episode_width)]
-        # loop over episode steps
-        for yy, yy_hat in zip(y, y_hat):
-            yy_value = yy[0]
-            count = seen_count[yy_value % episode_width]
-            if count < (episode_width + 1):
-                correct_by_k_shot[count].append(float(torch.equal(yy, yy_hat)))
-            seen_count[yy_value % episode_width] += 1
+            x, y = data
+            y_hat = []
+            for xx, yy in zip(x, y):
+                xx_cuda, yy_cuda = Variable(xx.cuda()), Variable(yy.cuda())
+                query = net(xx_cuda)
+                yy_hat, embed, loss = mem.query(query, yy_cuda, False)
+                correct.append(float(torch.equal(yy_hat, torch.unsqueeze(yy, dim=1))))
+                y_hat.append(yy_hat)
 
-    print("validation overall accuracy {0:f}".format(np.mean(correct)))
-    for idx in range(episode_width + 1):
-        print("{0:d}-shot: {1:.3f}".format(idx, np.mean(correct_by_k_shot[idx])))
+            # compute per_shot accuracies
+            seen_count = [0 for idx in range(episode_width)]
+            # loop over episode steps
+            for yy, yy_hat in zip(y, y_hat):
+                yy_value = yy[0]
+                count = seen_count[yy_value % episode_width]
+                if count < (episode_width + 1):
+                    correct_by_k_shot[count].append(float(torch.equal(yy_hat, torch.unsqueeze(yy, dim=1))))
+                seen_count[yy_value % episode_width] += 1
+
+        print("episode batch: {0:d} average loss: {1:.6f}".format(i, (cummulative_loss / (counter))))
+        print("validation overall accuracy {0:f}".format(np.mean(correct)))
+        for idx in range(episode_width + 1):
+            print("{0:d}-shot: {1:.3f}".format(idx, np.mean(correct_by_k_shot[idx])))
+        cummulative_loss = 0
+        counter = 0
