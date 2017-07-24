@@ -65,7 +65,7 @@ cummulative_loss = 0
 counter = 0
 for i, data in enumerate(trainloader, 0):
     # erase memory before training episode
-    mem.erase()
+    mem.build()
     x, y = data
     for xx, yy in zip(x, y):
         xx_cuda, yy_cuda = Variable(xx.cuda()), Variable(yy.cuda())
@@ -84,7 +84,7 @@ for i, data in enumerate(trainloader, 0):
         testloader = testset.sample_episode_batch(episode_length, episode_width, batch_size=1, N=50)
         for data in testloader:
             # erase memory before validation episode
-            mem.erase()
+            mem.build()
 
             x, y = data
             y_hat = []
@@ -92,7 +92,7 @@ for i, data in enumerate(trainloader, 0):
                 xx_cuda, yy_cuda = Variable(xx.cuda()), Variable(yy.cuda())
                 query = net(xx_cuda)
                 yy_hat, embed, loss = mem.query(query, yy_cuda, False)
-                correct.append(float(torch.equal(yy_hat, torch.unsqueeze(yy, dim=1))))
+                correct.append(float(torch.equal(yy_hat.cpu(), torch.unsqueeze(yy, dim=1))))
                 y_hat.append(yy_hat)
 
             # compute per_shot accuracies
@@ -102,7 +102,7 @@ for i, data in enumerate(trainloader, 0):
                 yy_value = yy[0]
                 count = seen_count[yy_value % episode_width]
                 if count < (episode_width + 1):
-                    correct_by_k_shot[count].append(float(torch.equal(yy_hat, torch.unsqueeze(yy, dim=1))))
+                    correct_by_k_shot[count].append(float(torch.equal(yy_hat.cpu(), torch.unsqueeze(yy, dim=1))))
                 seen_count[yy_value % episode_width] += 1
 
         print("episode batch: {0:d} average loss: {1:.6f}".format(i, (cummulative_loss / (counter))))

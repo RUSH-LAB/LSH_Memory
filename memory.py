@@ -6,10 +6,13 @@ import numpy as np
 import math
 import functools
 
-def random_uniform(shape, low, high):
+def random_uniform(shape, low, high, cuda):
     x = torch.rand(*shape)
-    result = (high - low) * x + low
-    return result
+    result_cpu = (high - low) * x + low
+    if cuda:
+        return result_cpu.cuda()
+    else:
+        return result_cpu
 
 def multiply(x):
     return functools.reduce(lambda x,y: x*y, x, 1)
@@ -46,10 +49,7 @@ Softmax Temperature -
 class Memory(nn.Module):
     def __init__(self, memory_size, key_dim, top_k = 256, inverse_temp = 40, age_noise=8.0, margin = 0.1):
         super(Memory, self).__init__()
-        self.keys = F.normalize(random_uniform((memory_size, key_dim), -0.1, 0.1), dim=1)
-        self.values = torch.zeros(memory_size, 1).long()
-        self.age = torch.zeros(memory_size, 1)
-
+        # Constants
         self.memory_size = memory_size
         self.key_dim = key_dim
         self.top_k = min(top_k, memory_size)
@@ -57,18 +57,22 @@ class Memory(nn.Module):
         self.age_noise = age_noise
         self.margin = margin
 
-    def erase(self):
-        self.keys = F.normalize(random_uniform((self.memory_size, self.key_dim), -0.1, 0.1), dim=1)
-        self.values = torch.zeros(self.memory_size, 1).long()
-        self.age = torch.zeros(self.memory_size, 1)
+        # Parameters
+        self.query_proj = nn.Parameter(torch.randn(key_dim, key_dim))
+        self.build()
+
+    def build(self):
+        self.keys = F.normalize(random_uniform((self.memory_size, self.key_dim), -0.1, 0.1, cuda=True), dim=1)
+        self.keys_var = ag.Variable(self.keys, requires_grad=False)
+        self.values = torch.zeros(self.memory_size, 1).long().cuda()
+        self.age = torch.zeros(self.memory_size, 1).cuda()
 
     def predict(self, x):
-        query = F.normalize(x, dim=1)
-        keys_var = ag.Variable(self.keys, requires_grad=False)
-        batch_size, dims = query.size()
+        batch_size, dims = x.size()
+        query = F.normalize(torch.matmul(x, self.query_proj), dim=1)
 
         # Find the k-nearest neighbors of the query
-        scores = torch.matmul(query, torch.t(keys_var))
+        scores = torch.matmul(query, torch.t(self.keys_var))
         cosine_similarity, topk_indices_var = torch.topk(scores, self.top_k, dim=1)
 
         # retrive memory values - prediction
@@ -93,20 +97,17 @@ class Memory(nn.Module):
 		        - A normalized score measuring the similarity between query and nearest neighbor
             loss - average loss for memory module
         """
-        x, y = x.cpu(), y.cpu()
-        query = F.normalize(x, dim=1)
-        keys_var = ag.Variable(self.keys, requires_grad=False)
-        batch_size, dims = query.size()
+        batch_size, dims = x.size()
+        query = F.normalize(torch.matmul(x, self.query_proj), dim=1)
 
         # Find the k-nearest neighbors of the query
-        scores = torch.matmul(query, torch.t(keys_var))
+        scores = torch.matmul(query, torch.t(self.keys_var))
         cosine_similarity, topk_indices_var = torch.topk(scores, self.top_k, dim=1)
+        softmax_score = F.softmax(self.softmax_temperature * cosine_similarity)
 
         topk_indices = topk_indices_var.detach().data
         y_hat_indices = topk_indices[:, 0]
         y_hat = self.values[y_hat_indices]
-
-        softmax_score = F.softmax(self.softmax_temperature * cosine_similarity)
 
         loss = None
         if not predict:
@@ -160,7 +161,7 @@ class Memory(nn.Module):
         # Select item with oldest age, Add random offset - n' = argmax_i(A[i]) + r_i 
         # K[n'] <- q, V[n'] <- v, A[n'] <- 0
         if incorrect:
-            age_with_noise = self.age + random_uniform((self.memory_size, 1), -self.age_noise, self.age_noise)
+            age_with_noise = self.age + random_uniform((self.memory_size, 1), -self.age_noise, self.age_noise, cuda=True)
             topk_values, topk_indices = torch.topk(age_with_noise, batch_size, dim=0)
             oldest_indices = torch.squeeze(topk_indices)
             self.keys[oldest_indices] = query.data
