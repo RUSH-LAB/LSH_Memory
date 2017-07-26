@@ -23,12 +23,12 @@ class Net(nn.Module):
         p = 0.3
 
         ch, row, col = input_shape
-        self.conv1 = nn.Conv2d(ch, 64, kernel, padding=(pad, pad))
-        self.conv2 = nn.Conv2d(64, 64, kernel, padding=(pad, pad))
-        self.conv3 = nn.Conv2d(64, 128, kernel, padding=(pad, pad))
-        self.conv4 = nn.Conv2d(128, 128, kernel, padding=(pad, pad))
+        self.conv1 = nn.Conv2d(ch, 32, kernel, padding=(pad, pad))
+        self.conv2 = nn.Conv2d(32, 32, kernel, padding=(pad, pad))
+        self.conv3 = nn.Conv2d(32, 64, kernel, padding=(pad, pad))
+        self.conv4 = nn.Conv2d(64, 64, kernel, padding=(pad, pad))
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(row // 4 * col // 4 * 128, 128)
+        self.fc1 = nn.Linear(row // 4 * col // 4 * 64, 128)
         self.dropout = nn.Dropout(p)
 
     def forward(self, x, predict):

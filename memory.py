@@ -35,7 +35,7 @@ def MemoryLoss(positive, negative, margin):
         margin
     """
     assert(positive.size() == negative.size())
-    dist_hinge = torch.clamp(negative - positive + margin, min=0.0) - margin
+    dist_hinge = torch.clamp(negative - positive + margin, min=0.0)
     loss = torch.mean(dist_hinge)
     return loss
 
@@ -62,7 +62,7 @@ class Memory(nn.Module):
         self.query_proj = nn.Linear(key_dim, key_dim)
 
     def build(self):
-        self.keys = F.normalize(random_uniform((self.memory_size, self.key_dim), -0.1, 0.1, cuda=True), dim=1)
+        self.keys = F.normalize(random_uniform((self.memory_size, self.key_dim), -0.001, 0.001, cuda=True), dim=1)
         self.keys_var = ag.Variable(self.keys, requires_grad=False)
         self.values = torch.zeros(self.memory_size, 1).long().cuda()
         self.age = torch.zeros(self.memory_size, 1).cuda()
@@ -100,6 +100,7 @@ class Memory(nn.Module):
         """
         batch_size, dims = x.size()
         query = F.normalize(self.query_proj(x), dim=1)
+        #query = F.normalize(torch.matmul(x, self.query_proj), dim=1)
 
         # Find the k-nearest neighbors of the query
         scores = torch.matmul(query, torch.t(self.keys_var))
