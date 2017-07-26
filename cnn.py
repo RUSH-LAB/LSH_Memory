@@ -50,7 +50,7 @@ key_dim = 128
 episode_length = 30
 episode_width = 5
 validation_frequency = 20
-DATA_FILE_FORMAT = os.path.join(os.getcwd(), 'datasets/omniglot', '%s_omni.pkl')
+DATA_FILE_FORMAT = os.path.join(os.getcwd(), '%s_omni.pkl')
 
 train_filepath = DATA_FILE_FORMAT % 'train'
 trainset = omniglot.OmniglotDataset(train_filepath)
