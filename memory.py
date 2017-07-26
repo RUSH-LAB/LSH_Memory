@@ -35,7 +35,7 @@ def MemoryLoss(positive, negative, margin):
         margin
     """
     assert(positive.size() == negative.size())
-    dist_hinge = F.relu(negative - positive + margin) - margin
+    dist_hinge = torch.clamp(negative - positive + margin, min=0.0) - margin
     loss = torch.mean(dist_hinge)
     return loss
 
@@ -58,8 +58,8 @@ class Memory(nn.Module):
         self.margin = margin
 
         # Parameters
-        self.query_proj = nn.Parameter(torch.randn(key_dim, key_dim))
         self.build()
+        self.query_proj = nn.Linear(key_dim, key_dim)
 
     def build(self):
         self.keys = F.normalize(random_uniform((self.memory_size, self.key_dim), -0.1, 0.1, cuda=True), dim=1)
@@ -69,18 +69,19 @@ class Memory(nn.Module):
 
     def predict(self, x):
         batch_size, dims = x.size()
-        query = F.normalize(torch.matmul(x, self.query_proj), dim=1)
+        query = F.normalize(self.query_proj(x), dim=1)
 
         # Find the k-nearest neighbors of the query
         scores = torch.matmul(query, torch.t(self.keys_var))
         cosine_similarity, topk_indices_var = torch.topk(scores, self.top_k, dim=1)
 
+        # softmax of cosine similarities - embedding
+        softmax_score = F.softmax(self.softmax_temperature * cosine_similarity)
+
         # retrive memory values - prediction
         y_hat_indices = topk_indices_var.data[:, 0]
         y_hat = self.values[y_hat_indices]
 
-        # softmax of cosine similarities - embedding
-        softmax_score = F.softmax(self.softmax_temperature * cosine_similarity)
         return y_hat, softmax_score
 
     def query(self, x, y, predict=False):
@@ -98,13 +99,16 @@ class Memory(nn.Module):
             loss - average loss for memory module
         """
         batch_size, dims = x.size()
-        query = F.normalize(torch.matmul(x, self.query_proj), dim=1)
+        query = F.normalize(self.query_proj(x), dim=1)
 
         # Find the k-nearest neighbors of the query
         scores = torch.matmul(query, torch.t(self.keys_var))
         cosine_similarity, topk_indices_var = torch.topk(scores, self.top_k, dim=1)
+
+        # softmax of cosine similarities - embedding
         softmax_score = F.softmax(self.softmax_temperature * cosine_similarity)
 
+        # retrive memory values - prediction
         topk_indices = topk_indices_var.detach().data
         y_hat_indices = topk_indices[:, 0]
         y_hat = self.values[y_hat_indices]
@@ -116,9 +120,10 @@ class Memory(nn.Module):
             # topk_values =  (batch_size x topk x value_size)
 
             # collect the memory values corresponding to the topk scores
+            batch_size, topk_size = topk_indices.size()
             flat_topk = flatten(topk_indices)
             flat_topk_values = self.values[topk_indices]
-            topk_values = flat_topk_values.resize_(batch_size, self.top_k)
+            topk_values = flat_topk_values.resize_(batch_size, topk_size)
 
             correct_mask = torch.eq(topk_values, torch.unsqueeze(y.data, dim=1)).float()
             correct_mask_var = ag.Variable(correct_mask, requires_grad=False)
@@ -126,6 +131,11 @@ class Memory(nn.Module):
             pos_score, pos_idx = torch.topk(torch.mul(cosine_similarity, correct_mask_var), 1, dim=1)
             neg_score, neg_idx = torch.topk(torch.mul(cosine_similarity, 1-correct_mask_var), 1, dim=1)
 
+            # zero-out correct scores if there are no correct values in topk values
+            mask = 1.0 - torch.eq(torch.sum(correct_mask_var, dim=1), 0.0).float()
+            pos_score = torch.mul(pos_score, torch.unsqueeze(mask, dim=1))
+
+            #print(pos_score, neg_score)
             loss = MemoryLoss(pos_score, neg_score, self.margin)
 
         # Update memory
@@ -153,6 +163,7 @@ class Memory(nn.Module):
             correct_indices = y_hat_indices[correct_examples]
             correct_keys = self.keys[correct_indices]
             correct_query = query.data[correct_examples]
+
             new_correct_keys = F.normalize(correct_keys + correct_query, dim=1)
             self.keys[correct_indices] = new_correct_keys
             self.age[correct_indices] = 0
@@ -161,9 +172,14 @@ class Memory(nn.Module):
         # Select item with oldest age, Add random offset - n' = argmax_i(A[i]) + r_i 
         # K[n'] <- q, V[n'] <- v, A[n'] <- 0
         if incorrect:
+            incorrect_size = incorrect_examples.size()[0]
+            incorrect_query = query.data[incorrect_examples]
+            incorrect_values = y.data[incorrect_examples]
+
             age_with_noise = self.age + random_uniform((self.memory_size, 1), -self.age_noise, self.age_noise, cuda=True)
-            topk_values, topk_indices = torch.topk(age_with_noise, batch_size, dim=0)
+            topk_values, topk_indices = torch.topk(age_with_noise, incorrect_size, dim=0)
             oldest_indices = torch.squeeze(topk_indices)
-            self.keys[oldest_indices] = query.data
-            self.values[oldest_indices] = torch.unsqueeze(y.data, dim=1)
+
+            self.keys[oldest_indices] = incorrect_query
+            self.values[oldest_indices] = incorrect_values
             self.age[oldest_indices] = 0

@@ -35,7 +35,7 @@ class OmniglotDataset(Dataset):
             if label not in self.data:
                 self.data[label] = list()
             img = np.expand_dims(image, axis=0).astype('float32')
-            img /= 255.0
+            #img /= 255.0
             self.data[label].append(img)
         self.num_categories = len(self.data)
         self.category_size = len(self.data[processed_data['labels'][0]])
@@ -61,7 +61,7 @@ class OmniglotDataset(Dataset):
         for rnd in range(N):
             episodes_x = [list() for _ in range(episode_length)]
             episodes_y = [list() for _ in range(episode_length)]
-            assert self.num_categories >= episode_width
+            assert(self.num_categories >= episode_width)
 
             for b in range(batch_size):
                 episode_labels = random.sample(self.data.keys(), episode_width)
