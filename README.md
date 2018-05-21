@@ -3,6 +3,8 @@ One-Shot Learning using Nearest-Neighbor Search (NNS) and Locality-Sensitive Has
 
 Run data_utils.py to download and pre-process Omniglot dataset
 
+# Author: [Ryan Spring](https://github.com/rdspring1)
+
 # Implementation
 1. [Siamese Neural Networks for One-shot Image Recognition](https://www.cs.cmu.edu/~rsalakhu/papers/oneshot1.pdf)
 2. [Learning to Remember Rare Events](https://arxiv.org/abs/1703.03129)
